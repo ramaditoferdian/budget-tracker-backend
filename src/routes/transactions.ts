@@ -19,14 +19,22 @@ interface TransactionBody {
   categoryId: string
 }
 
-// GET /transactions - hanya transaksi milik user
+// GET /transactions - hanya transaksi milik user dengan dynamic orderBy
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id
+  const { sortBy = 'createdAt', order = 'desc' } = req.query
+
+  // Daftar kolom yang diperbolehkan untuk sort
+  const allowedSortFields = ['createdAt', 'amount', 'updatedAt', 'date']
+  const allowedOrder = ['asc', 'desc']
+
+  const sortField = allowedSortFields.includes(String(sortBy)) ? String(sortBy) : 'createdAt'
+  const sortOrder = allowedOrder.includes(String(order)) ? String(order) : 'desc'
 
   try {
     const transactions = await prisma.transaction.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { [sortField]: sortOrder },
       include: {
         type: true,
         category: true,
