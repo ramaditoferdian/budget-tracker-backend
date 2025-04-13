@@ -8,11 +8,89 @@ datasource db {
   directUrl  = env("DIRECT_URL")
 }
 
+
+//
+// ========================= Models =========================
+//
+
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  password     String         // hashed password
+  createdAt    DateTime       @default(now())
+
+  transactions Transaction[]  // Relasi ke transaksi yang dimiliki user
+
+  categories   Category[]
+  sources      Source[]
+  transactionTypes TransactionType[]
+}
+
+
+// 🧾 Tabel utama yang menyimpan data transaksi user
 model Transaction {
-  id        String   @id @default(uuid())
-  title     String
-  amount    Float
-  type      String   // 'income' atau 'expense'
-  category  String
-  createdAt DateTime @default(now())
+  id          String           @id @default(uuid())            // ID unik untuk setiap transaksi
+  description String                                           // Deskripsi opsional
+  date        DateTime         @default(now())                 // Tanggal transaksi (default: hari ini)
+  amount      Float                                             // Jumlah uang
+  createdAt   DateTime         @default(now())                 // Tanggal dibuat (default: sekarang)
+
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+
+  // Relasi ke tipe transaksi (income, expense, atau custom)
+  typeId      String
+  type        TransactionType  @relation(fields: [typeId], references: [id])
+
+  // Relasi ke sumber dana
+  sourceId    String
+  source      Source           @relation(fields: [sourceId], references: [id])
+
+  // Relasi ke kategori transaksi
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id])
+}
+
+// 🔁 Tipe transaksi seperti "income", "expense", atau bisa custom
+model TransactionType {
+  id           String        @id @default(uuid())
+  name         String                                          // Nama tipe transaksi
+  
+  userId       String?       // ← Nullable agar bisa jadi default
+  user         User?         @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+
+  categories   Category[]    // 👈 Tambahkan relasi ke Category
+
+  @@unique([name, userId]) // 👈 ini penting untuk mendukung upsert per user & default
+}
+
+// 💳 Sumber dana seperti "Cash", "BCA", "Dana", dll
+model Source {
+  id           String        @id @default(uuid())
+  name         String                                        // Nama sumber dana
+  accountNumber String?      // 👈 nomor rekening opsional
+  initialAmount  Float?      // 👈 dana awal opsional
+  
+  userId       String?       // ← Nullable agar bisa jadi default
+  user         User?         @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+
+  @@unique([name, userId]) // 👈 ini penting untuk mendukung upsert per user & default
+}
+
+// 🗂️ Kategori transaksi seperti "Makan", "Transport", dll
+model Category {
+  id           String        @id @default(uuid())
+  name         String        
+  
+  userId       String?       // ← Nullable agar bisa jadi default
+  user         User?         @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+
+  transactionType  TransactionType? @relation(fields: [transactionTypeId], references: [id])
+  transactionTypeId String?         // 👈 Foreign key ke TransactionType
+
+  @@unique([name, userId]) // 👈 ini penting untuk mendukung upsert per user & default
 }

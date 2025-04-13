@@ -1,19 +1,28 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import express from 'express'
+import cors from 'cors'
+import dotenv from 'dotenv'
 
-dotenv.config();
+import authRouter from './routes/auth'
+import transactionsRouter from './routes/transactions'
+import categoriesRouter from './routes/categories'
+import sourcesRouter from './routes/sources'
+import transactionTypesRouter from './routes/transactionTypes'
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+dotenv.config()
 
-app.use(cors());
-app.use(express.json());
+const app = express()
+const port = process.env.PORT || 3000
 
-app.get('/ping', (_req, res) => {
-  res.json({ message: 'pong' });
-});
+app.use(cors())
+app.use(express.json())
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
-});
+// ✅ Ini cara yang benar
+app.use('/auth', authRouter);
+app.use('/transactions', transactionsRouter);
+app.use('/categories', categoriesRouter)
+app.use('/sources', sourcesRouter)
+app.use('/transaction-types', transactionTypesRouter)
+
+app.listen(port, () => {
+  console.log(`🚀 Server running at http://localhost:${port}`)
+})
