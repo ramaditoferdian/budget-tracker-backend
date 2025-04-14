@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express'
 import { PrismaClient } from '@prisma/client'
-import { success, error, validationError } from '../helpers/response'
+import { success, error, validationError, result } from '../helpers/response'
 import { authenticateToken } from '../middleware/auth'
+import { recalculateBalance } from '../utils/recalculateBalance'
+import { generatePaginationResult, parsePagination } from '../utils/pagination'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -27,6 +29,7 @@ async function setupDefaultSources(userId: string) {
           userId,
           accountNumber: null, // Default value for accountNumber
           initialAmount: 0, // Default initial amount
+          balance: 0,
         },
       })
     }
@@ -38,6 +41,13 @@ async function setupDefaultSources(userId: string) {
 // GET /sources
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id
+
+  const { page, limit } = req.query
+  const pagination = parsePagination({ page, limit });
+
+  const filters: any = {
+    OR: [{ userId: null }, { userId }],
+  };
 
   try {
     // Check if user already has sources, if not setup default sources
@@ -51,14 +61,21 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
     }
 
     // Fetch all sources for the user including defaults
-    const sources = await prisma.source.findMany({
-      where: {
-        OR: [{ userId: null }, { userId }],
-      },
-      orderBy: { name: 'asc' },
-    })
 
-    res.json(success(sources))
+    const [sources, totalRows] = await Promise.all([
+      prisma.source.findMany({
+        where: filters,
+        orderBy: { name: 'asc' },
+        skip: pagination.skip,
+        take: pagination.limit,
+      }),
+      prisma.source.count({ where: filters }),
+    ])
+
+    const paginationResult = generatePaginationResult(totalRows, pagination);
+    const response = result({ sources }, paginationResult);
+
+    res.json(success(response))
   } catch (err) {
     console.error('GET /sources error:', err)
     res.status(500).json(error('Internal server error', 'INTERNAL_ERROR', 500))
@@ -98,11 +115,14 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       return
     }
 
+    const validInitialAmount = typeof initialAmount === 'number' && initialAmount >= 0 ? initialAmount : 0
+
     const created = await prisma.source.create({
       data: { 
         name: trimmedName,
         accountNumber: accountNumber || null,
-        initialAmount: initialAmount || 0,
+        initialAmount: validInitialAmount,
+        balance: validInitialAmount, // 🟢 Set balance awal sama dengan initialAmount
         userId 
       },
     })
@@ -125,13 +145,6 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     return
   }
 
-  if (!name || name.trim() === '') {
-    res.status(400).json(validationError([{ field: 'name', message: 'Name is required' }]))
-    return
-  }
-
-  const trimmedName = name.trim()
-
   try {
     const existing = await prisma.source.findFirst({
       where: { id, userId },
@@ -142,32 +155,56 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       return
     }
 
-    const duplicate = await prisma.source.findFirst({
-      where: {
-        name: {
-          equals: trimmedName,
-          mode: 'insensitive',
-        },
-        OR: [{ userId: null }, { userId }],
-        NOT: { id },
-      },
-    })
+    // Check if there are changes to apply (either name, accountNumber, or initialAmount)
+    const updatedData: { name?: string, accountNumber?: string | null, initialAmount?: number, balance?: number } = {}
 
-    if (duplicate) {
-      res.status(409).json(error('Another source with this name already exists', 'SOURCE_EXISTS', 409))
+    // Only update name or accountNumber if they are different
+    if (name && name.trim() !== existing.name) {
+      updatedData.name = name.trim()
+    }
+
+    if (accountNumber !== undefined && accountNumber !== existing.accountNumber) {
+      updatedData.accountNumber = accountNumber || null
+    }
+
+    // If initialAmount is provided and different from the existing one, we need to recalculate the balance
+    if (typeof initialAmount === 'number' && initialAmount !== existing.initialAmount) {
+      updatedData.initialAmount = initialAmount
+    
+      // Recalculate balance from scratch
+      const pemasukan = await prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          sourceId: id,
+          type: { name: 'Pemasukan' },
+        },
+      })
+    
+      const pengeluaran = await prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          sourceId: id,
+          type: { name: 'Pengeluaran' },
+        },
+      })
+    
+      // Calculate balance from initialAmount and transaction totals
+      updatedData.balance =  await recalculateBalance(id, initialAmount)
+    }
+    
+
+    // If no updates were made, return a message indicating no change
+    if (Object.keys(updatedData).length === 0) {
+      res.status(400).json(error('No changes were made to the source', 'NO_CHANGES', 400))
       return
     }
 
-    const updated = await prisma.source.update({
+    const updatedSource = await prisma.source.update({
       where: { id },
-      data: { 
-        name: trimmedName,
-        accountNumber: accountNumber || null,
-        initialAmount: initialAmount || 0,
-      },
+      data: updatedData,
     })
 
-    res.json(success(updated))
+    res.json(success(updatedSource))
   } catch (err) {
     console.error('PUT /sources/:id error:', err)
     res.status(500).json(error('Internal server error', 'INTERNAL_ERROR', 500))

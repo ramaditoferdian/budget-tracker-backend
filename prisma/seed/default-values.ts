@@ -3,56 +3,48 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 async function main() {
-  const defaultCategories = [
-    { name: 'Makan', transactionType: 'Pengeluaran' },
-    { name: 'Transportasi', transactionType: 'Pengeluaran' },
-    { name: 'Hiburan', transactionType: 'Pengeluaran' },
-    { name: 'Gaji', transactionType: 'Pemasukan' },
-    { name: 'Bonus', transactionType: 'Pemasukan' },
+  const transactionTypes = [
+    { id: 'income-type', name: 'Pemasukan' },
+    { id: 'expense-type', name: 'Pengeluaran' },
+    { id: 'transfer-type', name: 'Transfer' },
   ]
 
-  const defaultTransactionTypes = ['Pemasukan', 'Pengeluaran']
+  const categories = [
+    { id: 'makan-cat', name: 'Makan', transactionTypeId: 'expense-type' },
+    { id: 'transport-cat', name: 'Transportasi', transactionTypeId: 'expense-type' },
+    { id: 'hiburan-cat', name: 'Hiburan', transactionTypeId: 'expense-type' },
+    { id: 'gaji-cat', name: 'Gaji', transactionTypeId: 'income-type' },
+    { id: 'bonus-cat', name: 'Bonus', transactionTypeId: 'income-type' },
+    { id: 'in-trans-cat', name: 'Masuk', transactionTypeId: 'transfer-type' },
+    { id: 'out-trans-cat', name: 'Keluar', transactionTypeId: 'transfer-type' },
+  ]
 
-  // Seed transaction types
-  for (const name of defaultTransactionTypes) {
-    const existing = await prisma.transactionType.findFirst({
-      where: { name, userId: null },
+  for (const { id, name } of transactionTypes) {
+    await prisma.transactionType.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        name,
+        userId: null,
+      },
     })
-
-    if (!existing) {
-      await prisma.transactionType.create({
-        data: { name, userId: null },
-      })
-    }
   }
 
-  // Seed categories and link to transaction types
-  for (const { name, transactionType } of defaultCategories) {
-    const transactionTypeRecord = await prisma.transactionType.findFirst({
-      where: { name: transactionType, userId: null },
+  for (const { id, name, transactionTypeId } of categories) {
+    await prisma.category.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        name,
+        transactionTypeId,
+        userId: null,
+      },
     })
-
-    if (!transactionTypeRecord) {
-      console.log(`Transaction Type "${transactionType}" not found, skipping category "${name}".`)
-      continue
-    }
-
-    const existing = await prisma.category.findFirst({
-      where: { name, userId: null },
-    })
-
-    if (!existing) {
-      await prisma.category.create({
-        data: {
-          name,
-          userId: null, // Default userId = null
-          transactionTypeId: transactionTypeRecord.id, // Link category to transaction type
-        },
-      })
-    }
   }
 
-  console.log('✅ Default categories and transaction types seeded.')
+  console.log('✅ Seeded with hardcoded IDs.')
 }
 
 main()

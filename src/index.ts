@@ -7,13 +7,14 @@ import transactionsRouter from './routes/transactions'
 import categoriesRouter from './routes/categories'
 import sourcesRouter from './routes/sources'
 import transactionTypesRouter from './routes/transactionTypes'
+import corsOptions from './config/corsConfig'
 
 dotenv.config()
 
 const app = express()
 const port = process.env.PORT || 3000
 
-app.use(cors())
+app.use(cors(corsOptions))
 app.use(express.json())
 
 // ✅ Ini cara yang benar

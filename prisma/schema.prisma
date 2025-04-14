@@ -31,7 +31,7 @@ model User {
 // 🧾 Tabel utama yang menyimpan data transaksi user
 model Transaction {
   id          String           @id @default(uuid())            // ID unik untuk setiap transaksi
-  description String                                           // Deskripsi opsional
+  description String?                                          // Deskripsi opsional
   date        DateTime         @default(now())                 // Tanggal transaksi (default: hari ini)
   amount      Float                                             // Jumlah uang
   createdAt   DateTime         @default(now())                 // Tanggal dibuat (default: sekarang)
@@ -39,17 +39,18 @@ model Transaction {
   userId      String
   user        User             @relation(fields: [userId], references: [id])
 
-  // Relasi ke tipe transaksi (income, expense, atau custom)
-  typeId      String
-  type        TransactionType  @relation(fields: [typeId], references: [id])
+  typeId      String?
+  type        TransactionType? @relation(fields: [typeId], references: [id])
 
-  // Relasi ke sumber dana
-  sourceId    String
-  source      Source           @relation(fields: [sourceId], references: [id])
+  sourceId    String?
+  source      Source?           @relation("SourceTransactions", fields: [sourceId], references: [id])
 
-  // Relasi ke kategori transaksi
-  categoryId  String
-  category    Category         @relation(fields: [categoryId], references: [id])
+  // 👇 Tambahkan ini untuk mendukung transfer/tabungan
+  targetSourceId String?      
+  targetSource   Source?       @relation("TargetSourceTransactions", fields: [targetSourceId], references: [id])
+
+  categoryId   String?
+  category     Category?         @relation(fields: [categoryId], references: [id])
 }
 
 // 🔁 Tipe transaksi seperti "income", "expense", atau bisa custom
@@ -72,10 +73,14 @@ model Source {
   name         String                                        // Nama sumber dana
   accountNumber String?      // 👈 nomor rekening opsional
   initialAmount  Float?      // 👈 dana awal opsional
+  balance       Float     @default(0)
   
   userId       String?       // ← Nullable agar bisa jadi default
   user         User?         @relation(fields: [userId], references: [id])
-  transactions Transaction[]
+
+  transactions        Transaction[] @relation("SourceTransactions")         // sumber transaksi
+  receivedTransactions Transaction[] @relation("TargetSourceTransactions") // target transfer/tabungan
+
 
   @@unique([name, userId]) // 👈 ini penting untuk mendukung upsert per user & default
 }
