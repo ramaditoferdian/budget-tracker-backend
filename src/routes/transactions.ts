@@ -81,7 +81,10 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
     const [transactions, totalRows] = await Promise.all([
       prisma.transaction.findMany({
         where: filters,
-        orderBy: { [sortField]: sortOrder },
+        orderBy: [
+          {[sortField]: sortOrder},
+          {createdAt: 'desc'},
+        ],
         skip: pagination.skip,
         take: pagination.limit,
         include: {
