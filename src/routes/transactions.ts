@@ -260,7 +260,15 @@ router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
 // POST /transactions
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   const userId = req.user?.id;
-  const { amount, typeId, sourceId, targetSourceId, categoryId, description, date } = req.body as TransactionBody;
+  const {
+    amount,
+    typeId,
+    sourceId,
+    targetSourceId,
+    categoryId,
+    description,
+    date,
+  } = req.body as TransactionBody;
 
   const errors = [];
 
@@ -270,15 +278,6 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
   }
   if (!typeId) errors.push({ field: 'typeId', message: 'Transaction type is required' });
   if (!sourceId) errors.push({ field: 'sourceId', message: 'Source is required' });
-  if (!categoryId) errors.push({ field: 'categoryId', message: 'Category is required' });
-  if (targetSourceId && targetSourceId === sourceId) {
-    errors.push({ field: 'targetSourceId', message: 'Target source cannot be the same as source' });
-  }
-
-  if (errors.length > 0) {
-    res.status(400).json(validationError(errors));
-    return;
-  }
 
   if (!userId) {
     res.status(401).json(error('Unauthorized', 'UNAUTHORIZED', 401));
@@ -294,53 +293,66 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 
     const typeName = type.name.toLowerCase();
 
+    if ((typeName !== 'transfer' && typeName !== 'tabungan') && !categoryId) {
+      errors.push({ field: 'categoryId', message: 'Category is required' });
+    }
+
+    if ((typeName === 'transfer' || typeName === 'tabungan') && sourceId === targetSourceId) {
+      errors.push({ field: 'targetSourceId', message: 'Target source cannot be the same as source' });
+    }
+
+    if (errors.length > 0) {
+      res.status(400).json(validationError(errors));
+      return;
+    }
+
     const result = await prisma.$transaction(async (tx) => {
-      if (typeName === 'tabungan' || typeName === 'transfer') {
+      if (typeName === 'transfer' || typeName === 'tabungan') {
         if (!targetSourceId) {
-          return { error: true, status: 400, code: 'TARGET_SOURCE_ID_REQUIRED', message: 'Target source id is required for transfer' };
+          return {
+            error: true,
+            status: 400,
+            code: 'TARGET_SOURCE_ID_REQUIRED',
+            message: 'Target source id is required for transfer',
+          };
         }
 
-        const source = await tx.source.findUnique({ where: { id: sourceId } });
-        const targetSource = await tx.source.findUnique({ where: { id: targetSourceId } });
+        const [source, targetSource] = await Promise.all([
+          tx.source.findUnique({ where: { id: sourceId } }),
+          tx.source.findUnique({ where: { id: targetSourceId } }),
+        ]);
 
         if (!source || !targetSource) {
-          return { error: true, status: 404, code: 'SOURCE_NOT_FOUND', message: 'Source or target source not found' };
+          return {
+            error: true,
+            status: 404,
+            code: 'SOURCE_NOT_FOUND',
+            message: 'Source or target source not found',
+          };
         }
 
-        if (source.initialAmount! < amount && source.balance! < amount) {
-          return { error: true, status: 400, code: 'INSUFFICIENT_FUNDS', message: 'Insufficient source initial amount' };
+        if (source.balance < amount) {
+          return {
+            error: true,
+            status: 400,
+            code: 'INSUFFICIENT_FUNDS',
+            message: 'Insufficient balance',
+          };
         }
 
-        const outCategory = await tx.category.findFirst({ where: { transactionTypeId: typeId, name: 'Keluar' } });
-        const inCategory = await tx.category.findFirst({ where: { transactionTypeId: typeId, name: 'Masuk' } });
-
-        // Transaksi keluar
-        await tx.transaction.create({
+        const transfer = await tx.transaction.create({
           data: {
             description,
             amount,
             typeId,
             sourceId,
-            categoryId: outCategory?.id || '',
+            targetSourceId,
             userId,
             date: date ? new Date(date) : undefined,
+            categoryId: null,
           },
         });
 
-        // Transaksi masuk
-        await tx.transaction.create({
-          data: {
-            description,
-            amount,
-            typeId,
-            sourceId: targetSourceId,
-            categoryId: inCategory?.id || '',
-            userId,
-            date: date ? new Date(date) : undefined,
-          },
-        });
-
-        // Update saldo
         await tx.source.update({
           where: { id: sourceId },
           data: { balance: { decrement: amount } },
@@ -351,17 +363,17 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
           data: { balance: { increment: amount } },
         });
 
-        return { message: 'Transfer created successfully' };
+        return { data: transfer };
       }
 
-      // Untuk pemasukan & pengeluaran
+      // Untuk pemasukan dan pengeluaran
       const created = await tx.transaction.create({
         data: {
           description,
           amount,
           typeId,
           sourceId,
-          targetSourceId,
+          targetSourceId: null,
           categoryId,
           userId,
           date: date ? new Date(date) : undefined,
@@ -369,23 +381,45 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       });
 
       if (typeName === 'pemasukan') {
-        await tx.source.update({ where: { id: sourceId }, data: { balance: { increment: amount } } });
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { balance: { increment: amount } },
+        });
       } else if (typeName === 'pengeluaran') {
-        await tx.source.update({ where: { id: sourceId }, data: { balance: { decrement: amount } } });
+        const source = await tx.source.findUnique({ where: { id: sourceId } });
+        if (!source) {
+          return {
+            error: true,
+            status: 404,
+            code: 'SOURCE_NOT_FOUND',
+            message: 'Source not found',
+          };
+        }
+
+        if (source.balance < amount) {
+          return {
+            error: true,
+            status: 400,
+            code: 'INSUFFICIENT_FUNDS',
+            message: 'Insufficient balance',
+          };
+        }
+
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { balance: { decrement: amount } },
+        });
       }
 
       return { data: created };
     });
 
-    // Tangani error dari dalam $transaction
     if ('error' in result) {
-      res.status(result?.status ?? 500).json(
-        error(result?.message ?? 'Unknown error', result?.code ?? 'UNKNOWN_ERROR', result?.status ?? 500)
-      )
+      res.status(result.status!).json(error(result.message!, result.code, result.status));
       return;
     }
 
-    res.status(201).json(success(result.data || { message: result.message }));
+    res.status(201).json(success(result.data));
   } catch (err) {
     console.error('POST /transactions error:', err);
     res.status(500).json(error('Failed to create transaction', 'INTERNAL_ERROR', 500));
@@ -393,100 +427,161 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 });
 
 
-// PUT /transactions/:id - update transaksi milik user
-router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params
-  const userId = req.user?.id
-  const { amount, typeId, sourceId, targetSourceId, categoryId, description, date } = req.body as TransactionBody
+// PUT /transactions/:id
+router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  const { id } = req.params;
+  const {
+    amount,
+    typeId,
+    sourceId,
+    targetSourceId,
+    categoryId,
+    description,
+    date,
+  } = req.body as TransactionBody;
 
-  const errors = []
-  if (!description) errors.push({ field: 'description', message: 'Description is required' })
-  if (amount === undefined || amount === null || isNaN(amount)) errors.push({ field: 'amount', message: 'Amount must be a valid number' })
-  if (!typeId) errors.push({ field: 'typeId', message: 'Transaction type is required' })
-  if (!sourceId) errors.push({ field: 'sourceId', message: 'Source is required' })
-  if (!categoryId) errors.push({ field: 'categoryId', message: 'Category is required' })
-  if (targetSourceId && targetSourceId === sourceId) {
-    errors.push({ field: 'targetSourceId', message: 'Target source cannot be the same as source' })
+  const errors = [];
+
+  if (!description) errors.push({ field: 'description', message: 'Description is required' });
+  if (amount === undefined || amount === null || isNaN(amount)) {
+    errors.push({ field: 'amount', message: 'Amount must be a valid number' });
+  }
+  if (!typeId) errors.push({ field: 'typeId', message: 'Transaction type is required' });
+  if (!sourceId) errors.push({ field: 'sourceId', message: 'Source is required' });
+
+  if (!userId) {
+    res.status(401).json(error('Unauthorized', 'UNAUTHORIZED', 401));
+    return;
   }
 
-  if (errors.length > 0) {
-    res.status(400).json(validationError(errors))
-    return
+  const existing = await prisma.transaction.findUnique({
+    where: { id },
+  });
+
+  if (!existing || existing.userId !== userId) {
+    res.status(404).json(error('Transaction not found', 'NOT_FOUND', 404));
+    return;
   }
 
   try {
-    const existing = await prisma.transaction.findFirst({
-      where: { id, userId },
-    })
-
-    if (!existing) {
-      res.status(404).json(error('Transaction not found', 'NOT_FOUND', 404))
-      return
-    }
-
-    const type = await prisma.transactionType.findUnique({ where: { id: typeId } })
+    const type = await prisma.transactionType.findUnique({ where: { id: typeId } });
     if (!type) {
-      res.status(400).json(error('Invalid transaction type', 'INVALID_TYPE', 400))
-      return
+      res.status(400).json(error('Invalid transaction type', 'INVALID_TYPE', 400));
+      return;
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      // Kembalikan saldo lama
-      const oldType = await tx.transactionType.findUnique({ where: { id: existing.typeId ?? undefined } })
-      if (oldType) {
-        const oldTypeName = oldType.name.toLowerCase()
-        if (oldTypeName === 'pemasukan') {
-          await tx.source.update({ where: { id: existing.sourceId ?? undefined }, data: { balance: { decrement: existing.amount } } })
-        } else if (oldTypeName === 'pengeluaran') {
-          await tx.source.update({ where: { id: existing.sourceId ?? undefined }, data: { balance: { increment: existing.amount } } })
-        } else if (oldTypeName === 'tabungan' || oldTypeName === 'transfer') {
-          if (existing.sourceId && existing.targetSourceId) {
-            await tx.source.update({ where: { id: existing.sourceId }, data: { balance: { increment: existing.amount } } })
-            await tx.source.update({ where: { id: existing.targetSourceId }, data: { balance: { decrement: existing.amount } } })
-          }
+    const typeName = type.name.toLowerCase();
+
+    if ((typeName !== 'transfer' && typeName !== 'tabungan') && !categoryId) {
+      errors.push({ field: 'categoryId', message: 'Category is required' });
+    }
+
+    if ((typeName === 'transfer' || typeName === 'tabungan') && sourceId === targetSourceId) {
+      errors.push({ field: 'targetSourceId', message: 'Target source cannot be the same as source' });
+    }
+
+    if (errors.length > 0) {
+      res.status(400).json(validationError(errors));
+      return;
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Revert saldo lama
+      const oldType = await tx.transactionType.findUnique({ where: { id: existing.typeId! } });
+      const oldTypeName = oldType?.name.toLowerCase();
+
+      if (oldTypeName === 'pemasukan') {
+        await tx.source.update({
+          where: { id: existing.sourceId! },
+          data: { balance: { decrement: existing.amount } },
+        });
+      } else if (oldTypeName === 'pengeluaran') {
+        await tx.source.update({
+          where: { id: existing.sourceId! },
+          data: { balance: { increment: existing.amount } },
+        });
+      } else if (oldTypeName === 'transfer' || oldTypeName === 'tabungan') {
+        await tx.source.update({
+          where: { id: existing.sourceId! },
+          data: { balance: { increment: existing.amount } },
+        });
+
+        if (existing.targetSourceId) {
+          await tx.source.update({
+            where: { id: existing.targetSourceId },
+            data: { balance: { decrement: existing.amount } },
+          });
         }
       }
 
-      // Update data transaksi
-      const updatedTx = await tx.transaction.update({
+      // 2. Validasi saldo baru jika pengeluaran atau transfer
+      if ((typeName === 'pengeluaran' || typeName === 'transfer' || typeName === 'tabungan') && sourceId) {
+        const source = await tx.source.findUnique({ where: { id: sourceId } });
+        if (!source || source.balance < amount) {
+          return {
+            error: true,
+            status: 400,
+            code: 'INSUFFICIENT_FUNDS',
+            message: 'Insufficient balance',
+          };
+        }
+      }
+
+      // 3. Update transaksi
+      const updated = await tx.transaction.update({
         where: { id },
         data: {
           description,
           amount,
           typeId,
           sourceId,
-          targetSourceId: targetSourceId || null,
-          categoryId,
+          targetSourceId: (typeName === 'transfer' || typeName === 'tabungan') ? targetSourceId : null,
+          categoryId: (typeName === 'pemasukan' || typeName === 'pengeluaran') ? categoryId : null,
           date: date ? new Date(date) : undefined,
         },
-        include: {
-          type: true,
-          category: true,
-          source: true,
-        },
-      })
+      });
 
-      // Perbarui saldo baru
-      const typeName = type.name.toLowerCase()
+      // 4. Update saldo baru
       if (typeName === 'pemasukan') {
-        await tx.source.update({ where: { id: sourceId }, data: { balance: { increment: amount } } })
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { balance: { increment: amount } },
+        });
       } else if (typeName === 'pengeluaran') {
-        await tx.source.update({ where: { id: sourceId }, data: { balance: { decrement: amount } } })
-      } else if (typeName === 'tabungan' || typeName === 'transfer') {
-        if (!targetSourceId) throw new Error('Target source is required for transfer')
-        await tx.source.update({ where: { id: sourceId }, data: { balance: { decrement: amount } } })
-        await tx.source.update({ where: { id: targetSourceId }, data: { balance: { increment: amount } } })
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { balance: { decrement: amount } },
+        });
+      } else if (typeName === 'transfer' || typeName === 'tabungan') {
+        await tx.source.update({
+          where: { id: sourceId },
+          data: { balance: { decrement: amount } },
+        });
+
+        if (targetSourceId) {
+          await tx.source.update({
+            where: { id: targetSourceId },
+            data: { balance: { increment: amount } },
+          });
+        }
       }
 
-      return updatedTx
-    })
+      return { data: updated };
+    });
 
-    res.json(success(updated))
+    if ('error' in result) {
+      res.status(result.status!).json(error(result.message!, result.code, result.status));
+      return;
+    }
+
+    res.status(200).json(success(result.data));
   } catch (err) {
-    console.error('PUT /transactions/:id error:', err)
-    res.status(500).json(error('Failed to update transaction', 'INTERNAL_ERROR', 500))
+    console.error('PUT /transactions/:id error:', err);
+    res.status(500).json(error('Failed to update transaction', 'INTERNAL_ERROR', 500));
   }
-})
+});
+
 
 
 // DELETE /transactions/:id - delete a transaction
