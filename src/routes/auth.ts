@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import { success, error, validationError } from '../helpers/response'
+import { authenticateToken, AuthenticatedRequest } from '../middleware/auth'
 
 const router = Router()
 const prisma = new PrismaClient()
@@ -80,5 +81,35 @@ router.post('/login', async (req: Request<{}, {}, AuthBody>, res: Response) => {
     res.status(500).json(error('Failed to login'))
   }
 })
+
+// Tambahkan route ini di bawah /login
+router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+        sources: true,
+        categories: true,
+        transactionTypes: true,
+      },
+    })
+
+    if (!user) {
+      res.status(404).json(error('User not found', 'USER_NOT_FOUND', 404))
+      return 
+    }
+
+    res.json(success(user))
+  } catch (err) {
+    console.error('GET /auth/me error:', err)
+    res.status(500).json(error('Failed to get user'))
+  }
+})
+
 
 export default router

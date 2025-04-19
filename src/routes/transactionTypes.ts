@@ -50,19 +50,30 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
   const trimmedName = name.trim()
 
   try {
-    const existing = await prisma.transactionType.findFirst({
+    // Cek default
+    const defaultExists = await prisma.transactionType.findFirst({
       where: {
-        name: {
-          equals: trimmedName,
-          mode: 'insensitive',
-        },
-        OR: [{ userId: null }, { userId }],
+        name: { equals: trimmedName, mode: 'insensitive' },
+        userId: null,
       },
     })
 
-    if (existing) {
-      res.status(409).json(error('Transaction type with this name already exists', 'TYPE_EXISTS', 409))
-      return
+    if (defaultExists) {
+      res.status(409).json(error('Transaction type already exists in default values', 'TYPE_EXISTS', 409))
+      return 
+    }
+
+    // Cek user punya
+    const userExists = await prisma.transactionType.findFirst({
+      where: {
+        name: { equals: trimmedName, mode: 'insensitive' },
+        userId,
+      },
+    })
+
+    if (userExists) {
+      res.status(409).json(error('You already have a transaction type with this name', 'TYPE_EXISTS', 409))
+      return 
     }
 
     const created = await prisma.transactionType.create({
@@ -84,40 +95,49 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
 
   if (!userId) {
     res.status(401).json(error('Unauthorized', 'UNAUTHORIZED', 401))
-    return
+    return 
   }
 
   if (!name || name.trim() === '') {
     res.status(400).json(validationError([{ field: 'name', message: 'Name is required' }]))
-    return
+    return 
   }
 
   const trimmedName = name.trim()
 
   try {
-    const existing = await prisma.transactionType.findFirst({
+    const type = await prisma.transactionType.findFirst({
       where: { id, userId },
     })
 
-    if (!existing) {
-      res.status(404).json(error('Transaction type not found', 'NOT_FOUND', 404))
-      return
+    if (!type) {
+      res.status(404).json(error('Transaction type not found or not owned by user', 'NOT_FOUND', 404))
+      return 
+    }
+
+    const defaultExists = await prisma.transactionType.findFirst({
+      where: {
+        name: { equals: trimmedName, mode: 'insensitive' },
+        userId: null,
+      },
+    })
+
+    if (defaultExists) {
+      res.status(409).json(error('Transaction type already exists in default values', 'TYPE_EXISTS', 409))
+      return 
     }
 
     const duplicate = await prisma.transactionType.findFirst({
       where: {
-        name: {
-          equals: trimmedName,
-          mode: 'insensitive',
-        },
-        OR: [{ userId: null }, { userId }],
+        name: { equals: trimmedName, mode: 'insensitive' },
+        userId,
         NOT: { id },
       },
     })
 
     if (duplicate) {
       res.status(409).json(error('Another transaction type with this name already exists', 'TYPE_EXISTS', 409))
-      return
+      return 
     }
 
     const updated = await prisma.transactionType.update({
@@ -139,7 +159,7 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: 
 
   if (!userId) {
     res.status(401).json(error('Unauthorized', 'UNAUTHORIZED', 401))
-    return
+    return 
   }
 
   try {
@@ -149,7 +169,17 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: 
 
     if (!existing) {
       res.status(404).json(error('Transaction type not found or not owned by user', 'NOT_FOUND', 404))
-      return
+      return 
+    }
+
+    // Cek apakah digunakan oleh kategori
+    const categoryCount = await prisma.category.count({
+      where: { transactionTypeId: id },
+    })
+
+    if (categoryCount > 0) {
+      res.status(400).json(error('Transaction type is in use by categories and cannot be deleted', 'TYPE_IN_USE', 400))
+      return 
     }
 
     const deleted = await prisma.transactionType.delete({
