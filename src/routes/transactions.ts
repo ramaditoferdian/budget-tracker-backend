@@ -584,94 +584,69 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
 
 
 
-// DELETE /transactions/:id - delete a transaction
-router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { id } = req.params
-  const userId = req.user?.id
+// DELETE /transactions/:id
+router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const userId = req.user?.id;
+  const { id } = req.params;
+
+  if (!userId) {
+    res.status(401).json(error('Unauthorized', 'UNAUTHORIZED', 401));
+    return;
+  }
 
   try {
-    const transaction = await prisma.transaction.findFirst({
-      where: { id, userId },
+    const existing = await prisma.transaction.findUnique({
+      where: { id },
       include: {
         type: true,
-        source: true,
-        targetSource: true, // Include the linked "in" transaction for transfers
       },
-    })
+    });
 
-    if (!transaction) {
-      res.status(404).json(error('Transaction not found', 'NOT_FOUND', 404))
-      return 
+    if (!existing || existing.userId !== userId) {
+      res.status(404).json(error('Transaction not found', 'NOT_FOUND', 404));
+      return;
     }
 
-    // if (transaction.type.name.toLowerCase() === 'transfer') {
-    //   const { sourceId, amount, targetSource } = transaction
+    const typeName = existing.type?.name?.toLowerCase();
 
-    //   await prisma.$transaction(async (tx) => {
-    //     // Update the balances of the source and target sources
-    //     await tx.source.update({ where: { id: sourceId }, data: { balance: { increment: amount } } })
-    //     await tx.source.update({ where: { id: targetSource?.id }, data: { balance: { decrement: amount } } })
-
-    //     // Delete both "in" and "out" transactions
-    //     await tx.transaction.delete({ where: { id: transaction.id } })
-    //     await tx.transaction.delete({ where: { id: targetSource?.id } })
-    //   })
-
-    //   res.status(200).json(success('Transfer transaction and related transactions deleted successfully'))
-    //   return 
-    // }
-
-    if (transaction.type?.name.toLowerCase() === 'transfer') {
-      const { sourceId, amount, targetSourceId } = transaction
-    
-      const targetTransaction = await prisma.transaction.findFirst({
-        where: {
-          userId,
-          sourceId: targetSourceId || undefined,
-          amount,
-          description: transaction.description,
-          date: transaction.date,
-          typeId: transaction.typeId,
-        },
-      });
-    
-      await prisma.$transaction(async (tx) => {
-        // Kembalikan saldo
-        await tx.source.update({ where: { id: sourceId ?? undefined }, data: { balance: { increment: amount } } })
-        if (targetSourceId) {
-          await tx.source.update({ where: { id: targetSourceId }, data: { balance: { decrement: amount } } })
+    await prisma.$transaction(async (tx) => {
+      // Revert saldo sebelum hapus transaksi
+      if (typeName === 'pemasukan' && existing.sourceId) {
+        await tx.source.update({
+          where: { id: existing.sourceId },
+          data: { balance: { decrement: existing.amount } },
+        });
+      } else if (typeName === 'pengeluaran' && existing.sourceId) {
+        await tx.source.update({
+          where: { id: existing.sourceId },
+          data: { balance: { increment: existing.amount } },
+        });
+      } else if ((typeName === 'transfer' || typeName === 'tabungan') && existing.sourceId) {
+        await tx.source.update({
+          where: { id: existing.sourceId },
+          data: { balance: { increment: existing.amount } },
+        });
+      
+        if (existing.targetSourceId) {
+          await tx.source.update({
+            where: { id: existing.targetSourceId },
+            data: { balance: { decrement: existing.amount } },
+          });
         }
-    
-        // Hapus kedua transaksi
-        await tx.transaction.delete({ where: { id: transaction.id } })
-        if (targetTransaction) {
-          await tx.transaction.delete({ where: { id: targetTransaction.id } })
-        }
-      })
-    
-      res.status(200).json(success('Transfer transaction and related transaction deleted successfully'))
-      return
-    }
-    
+      }
 
-    // For non-transfer transactions, just delete the transaction and adjust the balance
-    await prisma.source.update({
-      where: { id: transaction.sourceId ?? undefined },
-      data: {
-        balance: {
-          [transaction.type?.name.toLowerCase() === 'pemasukan' ? 'decrement' : 'increment']: transaction.amount,
-        },
-      },
-    })
+      // Hapus transaksi
+      await tx.transaction.delete({ where: { id } });
+    });
 
-    await prisma.transaction.delete({ where: { id: transaction.id } })
-
-    res.status(200).json(success('Transaction deleted successfully'))
+    res.status(200).json(success({ message: 'Transaction deleted' }));
   } catch (err) {
-    console.error('DELETE /transactions/:id error:', err)
-    res.status(500).json(error('Failed to delete transaction', 'INTERNAL_ERROR', 500))
+    console.error('DELETE /transactions/:id error:', err);
+    res.status(500).json(error('Failed to delete transaction', 'INTERNAL_ERROR', 500));
   }
-})
+});
+
+
 
 
 
