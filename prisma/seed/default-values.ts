@@ -4,20 +4,21 @@ const prisma = new PrismaClient()
 
 async function main() {
   const transactionTypes = [
-    { id: 'income-type', name: 'Pemasukan' },
-    { id: 'expense-type', name: 'Pengeluaran' },
+    { id: 'income-type', name: 'Income' },
+    { id: 'expense-type', name: 'Expense' },
     { id: 'transfer-type', name: 'Transfer' },
-  ]
+  ];
 
   const categories = [
-    { id: 'makan-cat', name: 'Makan', transactionTypeId: 'expense-type' },
-    { id: 'transport-cat', name: 'Transportasi', transactionTypeId: 'expense-type' },
-    { id: 'hiburan-cat', name: 'Hiburan', transactionTypeId: 'expense-type' },
-    { id: 'gaji-cat', name: 'Gaji', transactionTypeId: 'income-type' },
-    { id: 'bonus-cat', name: 'Bonus', transactionTypeId: 'income-type' },
-    { id: 'in-trans-cat', name: 'Masuk', transactionTypeId: 'transfer-type' },
-    { id: 'out-trans-cat', name: 'Keluar', transactionTypeId: 'transfer-type' },
-  ]
+    { id: 'food-cat', name: '🍽️ Food & Beverages', transactionTypeId: 'expense-type' },
+    { id: 'transport-cat', name: '🚗 Transportation', transactionTypeId: 'expense-type' },
+    { id: 'entertainment-cat', name: '🎤 Entertainment & Leisure', transactionTypeId: 'expense-type' },
+    { id: 'salary-cat', name: '💰 Salary', transactionTypeId: 'income-type' },
+    { id: 'bonus-cat', name: '🎉 Bonus', transactionTypeId: 'income-type' },
+    { id: 'in-trans-cat', name: '📥 Incoming Funds', transactionTypeId: 'transfer-type' },
+    { id: 'out-trans-cat', name: '📤 Outgoing Funds', transactionTypeId: 'transfer-type' },
+  ];
+  
 
   for (const { id, name } of transactionTypes) {
     await prisma.transactionType.upsert({

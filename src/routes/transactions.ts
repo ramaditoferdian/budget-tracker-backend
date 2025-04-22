@@ -150,8 +150,8 @@ router.get('/calendar', authenticateToken, async (req: AuthenticatedRequest, res
       const dateStr = format(date, 'yyyy-MM-dd')
       const types = resultMap[dateStr] || {}
 
-      const pemasukan = types['pemasukan'] || 0
-      const pengeluaran = types['pengeluaran'] || 0
+      const pemasukan = types['Income'] || 0
+      const pengeluaran = types['Expense'] || 0
 
       return {
         date: dateStr,
@@ -201,9 +201,9 @@ router.get('/summary', authenticateToken, async (req: AuthenticatedRequest, res:
     let totalTabungan = 0
 
     transactions.forEach(tx => {
-      if (tx.type?.name.toLowerCase() === 'pemasukan') {
+      if (tx.type?.name.toLowerCase() === 'Income') {
         totalPemasukan += tx.amount
-      } else if (tx.type?.name.toLowerCase() === 'pengeluaran') {
+      } else if (tx.type?.name.toLowerCase() === 'Expense') {
         totalPengeluaran += tx.amount
       } else if (tx.type?.name.toLowerCase() === 'tabungan') {
         totalTabungan += tx.amount
@@ -380,12 +380,12 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
         },
       });
 
-      if (typeName === 'pemasukan') {
+      if (typeName === 'Income') {
         await tx.source.update({
           where: { id: sourceId },
           data: { balance: { increment: amount } },
         });
-      } else if (typeName === 'pengeluaran') {
+      } else if (typeName === 'Expense') {
         const source = await tx.source.findUnique({ where: { id: sourceId } });
         if (!source) {
           return {
@@ -491,12 +491,12 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       const oldType = await tx.transactionType.findUnique({ where: { id: existing.typeId! } });
       const oldTypeName = oldType?.name.toLowerCase();
 
-      if (oldTypeName === 'pemasukan') {
+      if (oldTypeName === 'Income') {
         await tx.source.update({
           where: { id: existing.sourceId! },
           data: { balance: { decrement: existing.amount } },
         });
-      } else if (oldTypeName === 'pengeluaran') {
+      } else if (oldTypeName === 'Expense') {
         await tx.source.update({
           where: { id: existing.sourceId! },
           data: { balance: { increment: existing.amount } },
@@ -516,7 +516,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       }
 
       // 2. Validasi saldo baru jika pengeluaran atau transfer
-      if ((typeName === 'pengeluaran' || typeName === 'transfer' || typeName === 'tabungan') && sourceId) {
+      if ((typeName === 'Expense' || typeName === 'transfer' || typeName === 'tabungan') && sourceId) {
         const source = await tx.source.findUnique({ where: { id: sourceId } });
         if (!source || source.balance < amount) {
           return {
@@ -537,18 +537,18 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
           typeId,
           sourceId,
           targetSourceId: (typeName === 'transfer' || typeName === 'tabungan') ? targetSourceId : null,
-          categoryId: (typeName === 'pemasukan' || typeName === 'pengeluaran') ? categoryId : null,
+          categoryId: (typeName === 'Income' || typeName === 'Expense') ? categoryId : null,
           date: date ? new Date(date) : undefined,
         },
       });
 
       // 4. Update saldo baru
-      if (typeName === 'pemasukan') {
+      if (typeName === 'Income') {
         await tx.source.update({
           where: { id: sourceId },
           data: { balance: { increment: amount } },
         });
-      } else if (typeName === 'pengeluaran') {
+      } else if (typeName === 'Expense') {
         await tx.source.update({
           where: { id: sourceId },
           data: { balance: { decrement: amount } },
@@ -611,12 +611,12 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: 
 
     await prisma.$transaction(async (tx) => {
       // Revert saldo sebelum hapus transaksi
-      if (typeName === 'pemasukan' && existing.sourceId) {
+      if (typeName === 'Income' && existing.sourceId) {
         await tx.source.update({
           where: { id: existing.sourceId },
           data: { balance: { decrement: existing.amount } },
         });
-      } else if (typeName === 'pengeluaran' && existing.sourceId) {
+      } else if (typeName === 'Expense' && existing.sourceId) {
         await tx.source.update({
           where: { id: existing.sourceId },
           data: { balance: { increment: existing.amount } },

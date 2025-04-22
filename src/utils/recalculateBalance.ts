@@ -13,7 +13,7 @@ export async function recalculateBalance(sourceId: string, initialAmount?: numbe
     _sum: { amount: true },
     where: {
       sourceId,
-      type: { name: 'Pemasukan' },
+      type: { id: 'income-type' },
     },
   })
 
@@ -22,7 +22,7 @@ export async function recalculateBalance(sourceId: string, initialAmount?: numbe
     _sum: { amount: true },
     where: {
       sourceId,
-      type: { name: 'Pengeluaran' },
+      type: { id: 'expense-type' },
     },
   })
 
@@ -31,8 +31,8 @@ export async function recalculateBalance(sourceId: string, initialAmount?: numbe
     _sum: { amount: true },
     where: {
       sourceId,
-      type: { name: 'Transfer' },
-      category: { name: 'Keluar' },
+      type: { name: 'Transfer',  },
+      category: { id: 'out-trans-cat' },
     },
   })
 
@@ -42,7 +42,7 @@ export async function recalculateBalance(sourceId: string, initialAmount?: numbe
     where: {
       sourceId,
       type: { name: 'Transfer' },
-      category: { name: 'Masuk' },
+      category: { id: 'in-trans-cat' },
     },
   })
 

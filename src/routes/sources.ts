@@ -176,7 +176,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
         _sum: { amount: true },
         where: {
           sourceId: id,
-          type: { name: 'Pemasukan' },
+          type: { name: 'Income' },
         },
       })
     
@@ -184,7 +184,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
         _sum: { amount: true },
         where: {
           sourceId: id,
-          type: { name: 'Pengeluaran' },
+          type: { name: 'Expense' },
         },
       })
     
