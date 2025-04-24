@@ -214,6 +214,21 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: 
       return
     }
 
+    // Cek apakah source sedang digunakan oleh transaksi
+    const usedInTransactions = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { sourceId: id },
+          { targetSourceId: id }, // kalau kamu pakai targetSourceId juga
+        ],
+      },
+    })
+
+    if (usedInTransactions) {
+      res.status(400).json(error('Source is used in one or more transactions', 'SOURCE_IN_USE', 400))
+      return
+    }
+
     const deleted = await prisma.source.delete({
       where: { id },
     })
