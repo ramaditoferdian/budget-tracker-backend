@@ -171,23 +171,6 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     if (typeof initialAmount === 'number' && initialAmount !== existing.initialAmount) {
       updatedData.initialAmount = initialAmount
     
-      // Recalculate balance from scratch
-      const pemasukan = await prisma.transaction.aggregate({
-        _sum: { amount: true },
-        where: {
-          sourceId: id,
-          type: { name: 'Income' },
-        },
-      })
-    
-      const pengeluaran = await prisma.transaction.aggregate({
-        _sum: { amount: true },
-        where: {
-          sourceId: id,
-          type: { name: 'Expense' },
-        },
-      })
-    
       // Calculate balance from initialAmount and transaction totals
       updatedData.balance =  await recalculateBalance(id, initialAmount)
     }
