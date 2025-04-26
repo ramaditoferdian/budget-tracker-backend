@@ -321,9 +321,9 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
           throw new AppError('Source or target source not found', 'SOURCE_NOT_FOUND', 404)
         }
 
-        if (source.balance < amount) {
-          throw new AppError('Insufficient balance', 'INSUFFICIENT_FUNDS', 400)
-        }
+        // if (source.balance < amount) {
+        //   throw new AppError('Insufficient balance', 'INSUFFICIENT_FUNDS', 400)
+        // }
 
         const transfer = await tx.transaction.create({
           data: {
@@ -376,9 +376,9 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
           throw new AppError('Source not found', 'SOURCE_NOT_FOUND', 404)
         }
 
-        if (source.balance < amount) {
-          throw new AppError('Insufficient balance', 'INSUFFICIENT_FUNDS', 400)
-        }
+        // if (source.balance < amount) {
+        //   throw new AppError('Insufficient balance', 'INSUFFICIENT_FUNDS', 400)
+        // }
 
         await tx.source.update({
           where: { id: sourceId },
@@ -496,13 +496,14 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
             code: 'SOURCE_NOT_FOUND',
             message: 'Source not found',
           }));
-        } else if (source.balance < amount) {
-          throw new Error(JSON.stringify({
-            status: 400,
-            code: 'INSUFFICIENT_FUNDS',
-            message: 'Insufficient balance',
-          }));
-        }
+        } 
+        // else if (source.balance < amount) {
+        //   throw new Error(JSON.stringify({
+        //     status: 400,
+        //     code: 'INSUFFICIENT_FUNDS',
+        //     message: 'Insufficient balance',
+        //   }));
+        // }
       }
 
       // 3. Update transaksi
