@@ -18,6 +18,8 @@ model User {
   id           String         @id @default(uuid())
   email        String         @unique
   password     String         // hashed password
+  isFirstTimeLogin Boolean  @default(true)
+
   createdAt    DateTime       @default(now())
 
   transactions Transaction[]  // Relasi ke transaksi yang dimiliki user
