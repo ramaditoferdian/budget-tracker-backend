@@ -15,9 +15,7 @@ interface AuthenticatedRequest extends Request {
 // Helper function to setup default sources for a new user
 async function setupDefaultSources(userId: string) {
   const defaultSources = [
-    { name: 'Dompet' },
-    { name: 'Tabungan' },
-    { name: 'Investasi' }, // you can add more default sources here
+    { name: 'Cash' },
   ]
 
   try {
