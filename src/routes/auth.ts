@@ -72,10 +72,18 @@ router.post('/login', async (req: Request<{}, {}, AuthBody>, res: Response) => {
 
     const token = jwt.sign({ 
       id: user.id,
-      email: user.email
+      email: user.email,
+      isFirstTimeLogin: user.isFirstTimeLogin,
     }, JWT_SECRET, { expiresIn: '7d' })
 
-    res.json(success({ token }))
+    res.json(success({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        isFirstTimeLogin: user.isFirstTimeLogin,
+      },
+    }))
   } catch (err) {
     console.error('POST /auth/login error:', err)
     res.status(500).json(error('Failed to login'))
@@ -96,6 +104,7 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
         sources: true,
         categories: true,
         transactionTypes: true,
+        isFirstTimeLogin: true,
       },
     })
 
@@ -110,6 +119,47 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
     res.status(500).json(error('Failed to get user'))
   }
 })
+
+// POST /auth/onboarding-complete
+router.post('/onboarding-complete', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.id
+
+  
+  try {
+    let user = await prisma.user.findUnique({ where: { id: userId } })
+  
+    if (!user) {
+      res.status(401).json(error('Invalid credentials', 'INVALID_CREDENTIALS', 401))
+      return 
+    }
+
+    await prisma.user.update({
+      where: { id: user?.id },
+      data: { isFirstTimeLogin: false },
+    })
+    
+    user =  await prisma.user.findUnique({ where: { id: userId } })
+
+    const token = jwt.sign({ 
+      id: user?.id,
+      email: user?.email,
+      isFirstTimeLogin: user?.isFirstTimeLogin,
+    }, JWT_SECRET, { expiresIn: '7d' })
+
+    res.json(success({
+      token,
+      user: {
+        id: user?.id,
+        email: user?.email,
+        isFirstTimeLogin: user?.isFirstTimeLogin,
+      },
+    }))
+  } catch (err) {
+    console.error('POST /auth/onboarding-complete error:', err)
+    res.status(500).json(error('Failed to update onboarding status'))
+  }
+})
+
 
 
 export default router
