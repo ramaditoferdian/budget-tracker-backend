@@ -126,7 +126,7 @@ router.post('/onboarding-complete', authenticateToken, async (req: Authenticated
 
   
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId } })
+    let user = await prisma.user.findUnique({ where: { id: userId } })
   
     if (!user) {
       res.status(401).json(error('Invalid credentials', 'INVALID_CREDENTIALS', 401))
@@ -137,6 +137,8 @@ router.post('/onboarding-complete', authenticateToken, async (req: Authenticated
       where: { id: user?.id },
       data: { isFirstTimeLogin: false },
     })
+    
+    user =  await prisma.user.findUnique({ where: { id: userId } })
 
     const token = jwt.sign({ 
       id: user?.id,
