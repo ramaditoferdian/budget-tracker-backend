@@ -15,9 +15,7 @@ interface AuthenticatedRequest extends Request {
 // Helper function to setup default sources for a new user
 async function setupDefaultSources(userId: string) {
   const defaultSources = [
-    { name: 'Dompet' },
-    { name: 'Tabungan' },
-    { name: 'Investasi' }, // you can add more default sources here
+    { name: 'Cash' },
   ]
 
   try {
@@ -171,23 +169,6 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     if (typeof initialAmount === 'number' && initialAmount !== existing.initialAmount) {
       updatedData.initialAmount = initialAmount
     
-      // Recalculate balance from scratch
-      const pemasukan = await prisma.transaction.aggregate({
-        _sum: { amount: true },
-        where: {
-          sourceId: id,
-          type: { name: 'Income' },
-        },
-      })
-    
-      const pengeluaran = await prisma.transaction.aggregate({
-        _sum: { amount: true },
-        where: {
-          sourceId: id,
-          type: { name: 'Expense' },
-        },
-      })
-    
       // Calculate balance from initialAmount and transaction totals
       updatedData.balance =  await recalculateBalance(id, initialAmount)
     }
@@ -228,6 +209,21 @@ router.delete('/:id', authenticateToken, async (req: AuthenticatedRequest, res: 
 
     if (!existing) {
       res.status(404).json(error('Source not found or not owned by user', 'NOT_FOUND', 404))
+      return
+    }
+
+    // Cek apakah source sedang digunakan oleh transaksi
+    const usedInTransactions = await prisma.transaction.findFirst({
+      where: {
+        OR: [
+          { sourceId: id },
+          { targetSourceId: id }, // kalau kamu pakai targetSourceId juga
+        ],
+      },
+    })
+
+    if (usedInTransactions) {
+      res.status(400).json(error('Source is used in one or more transactions', 'SOURCE_IN_USE', 400))
       return
     }
 
