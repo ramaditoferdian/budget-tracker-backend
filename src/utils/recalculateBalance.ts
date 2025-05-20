@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client'
+import { prisma } from "../lib/prisma"
 
-const prisma = new PrismaClient()
 
 export async function recalculateBalance(sourceId: string, initialAmount?: number): Promise<number> {
   // const source = await prisma.source.findUnique({ where: { id: sourceId } })

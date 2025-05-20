@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express'
-import { Prisma, PrismaClient } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { success, error, validationError } from '../helpers/response'
 import { authenticateToken } from '../middleware/auth'
+import { prisma } from '../lib/prisma'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string }

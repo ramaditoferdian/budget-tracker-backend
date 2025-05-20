@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
 import { success, error, validationError, result } from '../helpers/response'
 import { authenticateToken } from '../middleware/auth'
 import { startOfMonth, endOfMonth, format, eachDayOfInterval } from 'date-fns'
 import { generatePaginationResult, parsePagination } from '../utils/pagination'
 import { AppError } from '../helpers/appError'
+import { prisma } from '../lib/prisma'
+import { getRangeRecap } from '../helpers/modules/transactions/getRangeRecap'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string }
@@ -35,8 +35,8 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
   const sortField = allowedSortFields.includes(String(sortBy)) ? String(sortBy) : 'createdAt';
   const sortOrder = allowedOrder.includes(String(order)) ? String(order) : 'desc';
 
-  let start: Date;
-  let end: Date;
+  let start: Date = startOfMonth(new Date());
+  let end: Date = endOfMonth(new Date());
 
   // Parsing filter tanggal
   if (startDate && endDate) {
@@ -99,7 +99,15 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
     ]);
 
     const paginationResult = generatePaginationResult(totalRows, pagination);
-    const response = result({ transactions }, paginationResult);
+
+    const recap = await getRangeRecap({ 
+      filters: filters,
+      sortField: sortField,
+      sortOrder: sortOrder,
+      pagination: pagination
+    });
+
+    const response = result({ transactions, recap }, paginationResult);
 
     res.status(200).json(success(response));
   } catch (err) {

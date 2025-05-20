@@ -1,12 +1,11 @@
 import { Router, Request, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import { success, error, validationError } from '../helpers/response'
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth'
+import { prisma } from '../lib/prisma'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default_secret'
 
