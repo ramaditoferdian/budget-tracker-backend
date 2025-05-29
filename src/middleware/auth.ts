@@ -1,12 +1,18 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { error } from '../helpers/response'
+import dotenv from 'dotenv'
 
 export interface AuthenticatedRequest extends Request {
   user?: { id: string }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default_secret'
+dotenv.config()
+
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is not defined')
+}
+const JWT_SECRET = process.env.JWT_SECRET
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization

@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express'
-import { PrismaClient } from '@prisma/client'
 import { success, error, validationError, result } from '../helpers/response'
 import { authenticateToken } from '../middleware/auth'
 import { startOfMonth, endOfMonth, format, eachDayOfInterval } from 'date-fns'
 import { generatePaginationResult, parsePagination } from '../utils/pagination'
 import { AppError } from '../helpers/appError'
+import { prisma } from '../lib/prisma'
+import { getRangeRecap } from '../helpers/modules/transactions/getRangeRecap'
 
 const router = Router()
-const prisma = new PrismaClient()
 
 interface AuthenticatedRequest extends Request {
   user?: { id: string }
@@ -26,36 +26,57 @@ interface TransactionBody {
 // GET /transactions - dengan filter, sort, dan pagination
 router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.id;
-  const { sortBy = 'createdAt', order = 'desc', startDate, endDate, typeId, categoryId, sourceId, page, limit } = req.query;
+  const {
+    sortBy = 'createdAt',
+    order = 'desc',
+    startDate,
+    endDate,
+    typeIds,
+    categoryIds,
+    sourceIds,
+    page,
+    limit
+  } = req.query;
 
-  // Validasi dan filter berdasarkan query params
+  // Validasi sort dan order
   const allowedSortFields = ['createdAt', 'amount', 'updatedAt', 'date'];
   const allowedOrder = ['asc', 'desc'];
 
   const sortField = allowedSortFields.includes(String(sortBy)) ? String(sortBy) : 'createdAt';
   const sortOrder = allowedOrder.includes(String(order)) ? String(order) : 'desc';
 
-  let start: Date;
-  let end: Date;
+  // Parsing tanggal
+  let start = startOfMonth(new Date());
+  let end = endOfMonth(new Date());
 
-  // Parsing filter tanggal
   if (startDate && endDate) {
-    start = new Date(startDate as string);
-    end = new Date(endDate as string);
+    const [sy, sm, sd] = (startDate as string).split('-').map(Number);
+    const [ey, em, ed] = (endDate as string).split('-').map(Number);
 
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    const parsedStart = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+    const parsedEnd = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+
+    if (
+      !sy || !sm || !sd || isNaN(parsedStart.getTime()) ||
+      !ey || !em || !ed || isNaN(parsedEnd.getTime())
+    ) {
       res.status(400).json(error('Invalid startDate or endDate format. Use YYYY-MM-DD', 'INVALID_DATE_FORMAT', 400));
-      return 
+      return;
     }
-  } else {
-    const now = new Date();
-    start = startOfMonth(now);
-    end = endOfMonth(now);
+
+    start = parsedStart;
+    end = parsedEnd;
   }
 
-  // Menggunakan helper pagination
+  // Parsing pagination
   const pagination = parsePagination({ page, limit });
 
+  // Parsing filter ID array (jika dikirim sebagai string "id1,id2,id3")
+  const typeIdArray = typeof typeIds === 'string' ? typeIds.split(',') : [];
+  const categoryIdArray = typeof categoryIds === 'string' ? categoryIds.split(',') : [];
+  const sourceIdArray = typeof sourceIds === 'string' ? sourceIds.split(',') : [];
+
+  // Filter dasar
   const filters: any = {
     userId,
     date: {
@@ -64,27 +85,24 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
     },
   };
 
-  // Filter tambahan berdasarkan typeId, categoryId, sourceId
-  if (typeId) {
-    filters.typeId = typeId;
+  // Tambahkan filter berdasarkan ID jika tersedia
+  if (typeIdArray.length > 0) {
+    filters.typeId = { in: typeIdArray };
   }
-
-  if (categoryId) {
-    filters.categoryId = categoryId;
+  if (categoryIdArray.length > 0) {
+    filters.categoryId = { in: categoryIdArray };
   }
-
-  if (sourceId) {
-    filters.sourceId = sourceId;
+  if (sourceIdArray.length > 0) {
+    filters.sourceId = { in: sourceIdArray };
   }
 
   try {
-    // Query untuk mendapatkan transaksi
     const [transactions, totalRows] = await Promise.all([
       prisma.transaction.findMany({
         where: filters,
         orderBy: [
-          {[sortField]: sortOrder},
-          {createdAt: 'desc'},
+          { [sortField]: sortOrder },
+          { createdAt: 'desc' },
         ],
         skip: pagination.skip,
         take: pagination.limit,
@@ -99,7 +117,15 @@ router.get('/', authenticateToken, async (req: AuthenticatedRequest, res: Respon
     ]);
 
     const paginationResult = generatePaginationResult(totalRows, pagination);
-    const response = result({ transactions }, paginationResult);
+
+    const recap = await getRangeRecap({
+      filters,
+      sortField,
+      sortOrder,
+      pagination,
+    });
+
+    const response = result({ transactions, recap }, paginationResult);
 
     res.status(200).json(success(response));
   } catch (err) {
