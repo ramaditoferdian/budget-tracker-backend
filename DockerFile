@@ -1,0 +1,29 @@
+# Gunakan image Node.js LTS
+FROM node:20-buster
+
+# Buat folder kerja dalam container
+WORKDIR /app
+
+# Salin file yang diperlukan lebih dulu
+COPY package*.json ./
+
+# Install dependensi
+RUN npm install
+
+# Salin semua file (termasuk src/)
+COPY . .
+
+# Compile TypeScript ke dist/
+RUN npm run build
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Rebuild bcrypt agar cocok dengan environment container
+RUN npm rebuild bcrypt --build-from-source
+
+# Set port sesuai port aplikasi (bisa ganti kalau kamu pakai 3000 atau lainnya)
+EXPOSE 8080
+
+# Jalankan server
+CMD ["npm", "run", "start"]
